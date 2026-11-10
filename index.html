@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Störung melden · Laternen-Ausfall.de</title>
+<style>
+  body{margin:0;background:#f2f2f7;color:#15171c;font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  header{max-width:600px;margin:0 auto;padding:20px 16px 8px;font-weight:700;font-size:15px;color:#5b5b62}
+  main{padding:0 12px 32px}
+  .hinweis{max-width:600px;margin:24px auto;padding:20px;background:#fff;border-radius:14px;border:1px solid #d8d8de}
+  footer{max-width:600px;margin:0 auto;padding:0 16px 32px;font-size:13px;color:#5b5b62}
+</style>
+</head>
+<body>
+<header>Laternen-Ausfall.de</header>
+<main>
+<div id="formular-ziel" data-laternen-ausfall></div>
+<script>
+(function () {
+  var k = new URLSearchParams(window.location.search).get('k');
+  var ziel = document.getElementById('formular-ziel');
+  if (!k || !/^[A-Za-z0-9_-]{8,200}$/.test(k)) {
+    ziel.removeAttribute('data-laternen-ausfall');
+    ziel.className = 'hinweis';
+    ziel.textContent = 'Bitte öffne das Meldeformular über den Link oder die Webseite deiner Kommune.';
+    return;
+  }
+  var KONFIG = { url: "https://jljduusvfmibzpirntbi.supabase.co", publishableKey: "sb_publishable__sFY04WWa-gVpLFyKD5ceg_NiRjIn0h", formularSchluessel: k };
+  // Das Formular nimmt als Ziel das Element direkt vor diesem Skript.
+  (function (KONFIG) {
+// Laternen-Ausfall.de: Störmeldeformular für kommunale Webseiten.
+// Erwartet die Variable KONFIG aus dem Einbettungscode. Enthält keine geheimen Schlüssel.
+var script = document.currentScript;
+var ziel = (script && script.previousElementSibling) || document.querySelector('[data-laternen-ausfall]');
+if (ziel && !ziel.shadowRoot) {
+  var wurzel = ziel.attachShadow({ mode: 'open' });
+  var ladezeit = Date.now();
+  var position = null;
+  var gewaehlt = null;
+
+  var stil = document.createElement('style');
+  stil.textContent = [
+    ':host{display:block;color:#15171c;font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}',
+    '*{box-sizing:border-box}',
+    '.karte{width:100%;max-width:600px;margin:0 auto;padding:clamp(16px,4vw,28px);background:#fff;border:1px solid #d8d8de;border-radius:14px}',
+    'h2{margin:0 0 4px;font-size:clamp(21px,3vw,26px);line-height:1.2}',
+    '.unter{margin:0 0 20px;color:#5b5b62}',
+    '.vorschau{margin:0 0 16px;padding:10px 12px;border-radius:10px;background:#fff4e5;color:#7a4300;font-size:14px}',
+    '.feld{margin:0 0 16px}',
+    '.paar{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0 12px}',
+    'label{display:block;margin:0 0 5px;font-weight:600;font-size:15px}',
+    '.optional{font-weight:400;color:#5b5b62}',
+    'input[type=text],select,textarea{display:block;width:100%;min-height:46px;padding:10px 12px;font:inherit;color:inherit;background:#fff;border:1px solid #8a8a92;border-radius:10px}',
+    'textarea{min-height:92px;resize:vertical}',
+    'input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:3px solid #0b5bbe;outline-offset:1px}',
+    '[aria-invalid=true]{border-color:#c62b20}',
+    '.fehler{margin:5px 0 0;color:#c62b20;font-size:14px}',
+    '.haken{display:flex;gap:10px;align-items:flex-start;margin:0 0 18px;font-weight:400}',
+    '.haken input{flex:none;width:22px;height:22px;margin:1px 0 0}',
+    'button{width:100%;min-height:48px;padding:11px 16px;font:inherit;font-weight:600;border-radius:12px;cursor:pointer}',
+    '.haupt{color:#fff;background:#0b5bbe;border:1px solid #0b5bbe}',
+    '.neben{margin:0 0 6px;color:#0b5bbe;background:#fff;border:1px solid #0b5bbe}',
+    '.link{display:block;box-sizing:border-box;width:100%;min-height:48px;padding:12px 16px;text-align:center;font-weight:600;border-radius:12px;text-decoration:none}',
+    '.link[hidden]{display:none}',
+    'button[disabled]{opacity:.6;cursor:default}',
+    '.hinweis{margin:0 0 18px;color:#5b5b62;font-size:14px}',
+    '.falle{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}',
+    '.status{margin:12px 0 0;font-size:15px}',
+    '.status.schlecht{color:#c62b20}',
+    '.fertig{text-align:center}',
+    '.vorschlaege{margin-top:6px}',
+    '.vorschlag{display:block;width:100%;min-height:48px;margin:0 0 4px;padding:8px 12px;text-align:left;font-weight:400;color:inherit;background:#f2f2f7;border:0;border-radius:10px}',
+    '.vorschlag strong{display:block;font-weight:600}',
+    '.vorschlag span{font-size:14px;color:#5b5b62}',
+    '.klein{margin:6px 0 0}'
+  ].join('');
+  wurzel.appendChild(stil);
+
+  var karte = document.createElement('div');
+  karte.className = 'karte';
+  wurzel.appendChild(karte);
+
+  function element(name, eigenschaften, kinder) {
+    var e = document.createElement(name);
+    Object.keys(eigenschaften || {}).forEach(function (k) {
+      if (k === 'text') e.textContent = eigenschaften[k];
+      else e.setAttribute(k, eigenschaften[k]);
+    });
+    (kinder || []).forEach(function (k) { e.appendChild(k); });
+    return e;
+  }
+
+  function vergleich(text) { return String(text).trim().toLowerCase(); }
+
+  function ortName(name) { return String(name).trim().replace(/^(stadt|markt|gemeinde)\s+/i, ''); }
+
+  function adressTreffer(antwort, erlaubt) {
+    var gesehen = {}, nurHauspunkt = {}, ergebnis = [];
+    (antwort.features || []).forEach(function (f) {
+      var p = f.properties || {};
+      var hauptort = p.city || p.district || p.locality;
+      if (!hauptort || erlaubt.indexOf(vergleich(hauptort)) < 0) return;
+      if (p.district && erlaubt.indexOf(vergleich(p.district)) < 0) return;
+      var weg = p.street || (p.type === 'street' || p.osm_key === 'highway' ? p.name : null);
+      if (!weg) return;
+      // Jede Straße einmal und ohne Hausnummer; der Straßenpunkt ersetzt einen Hauspunkt.
+      var schluessel = vergleich(weg) + '|' + (p.district || '');
+      var istStrasse = !p.housenumber;
+      if (gesehen[schluessel] !== undefined && !(istStrasse && nurHauspunkt[schluessel])) return;
+      var orte = [p.district, p.city].filter(function (o, i, a) { return o && a.indexOf(o) === i; }).join(', ');
+      var treffer = {
+        strasse: weg, haus: null,
+        ort: [p.postcode, orte].filter(Boolean).join(' '),
+        lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0]
+      };
+      if (gesehen[schluessel] !== undefined) {
+        ergebnis[gesehen[schluessel]] = treffer;
+        nurHauspunkt[schluessel] = false;
+      } else {
+        gesehen[schluessel] = ergebnis.length;
+        nurHauspunkt[schluessel] = !istStrasse;
+        ergebnis.push(treffer);
+      }
+    });
+    return ergebnis.slice(0, 8);
+  }
+
+  function abstandMeter(a, b) {
+    var r = Math.PI / 180, x = (b.lon - a.lon) * r * Math.cos(a.lat * r), y = (b.lat - a.lat) * r;
+    return Math.sqrt(x * x + y * y) * 6371000;
+  }
+
+  // Sucht das genaue Haus; ohne sicheren Treffer bleibt der gewählte Straßenpunkt.
+  function genauerPunkt(treffer, hausnummer, name) {
+    if (!hausnummer || vergleich(hausnummer) === vergleich(treffer.haus || '')) return Promise.resolve(treffer);
+    return fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&countrycodes=de&country=Deutschland&street=' +
+      encodeURIComponent(hausnummer + ' ' + treffer.strasse) + '&city=' + encodeURIComponent(ortName(name)))
+      .then(function (a) { return a.json(); })
+      .then(function (liste) {
+        var genau = (liste || []).filter(function (e) {
+          var a = e.address || {};
+          return vergleich(a.road || '') === vergleich(treffer.strasse) &&
+            vergleich(a.house_number || '') === vergleich(hausnummer) &&
+            abstandMeter(treffer, { lat: parseFloat(e.lat), lon: parseFloat(e.lon) }) <= 2000;
+        })[0];
+        return genau ? { strasse: treffer.strasse, lat: parseFloat(genau.lat), lon: parseFloat(genau.lon) } : treffer;
+      })
+      .catch(function () { return treffer; });
+  }
+
+  function aufrufen(funktion, daten) {
+    return fetch(KONFIG.url + '/rest/v1/rpc/' + funktion, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: KONFIG.publishableKey },
+      body: JSON.stringify(daten)
+    }).then(function (antwort) {
+      return antwort.json().catch(function () { return null; }).then(function (inhalt) {
+        if (!antwort.ok) throw new Error((inhalt && inhalt.message) || '');
+        return inhalt;
+      });
+    });
+  }
+
+  function beschriftung(fuer, text, optional) {
+    var l = element('label', { 'for': fuer, text: text });
+    if (optional) l.appendChild(element('span', { 'class': 'optional', text: ' (optional)' }));
+    return l;
+  }
+
+  function textFeld(id, text, optional, maxLaenge, autocomplete) {
+    var eingabe = element('input', { type: 'text', id: id, maxlength: String(maxLaenge), autocomplete: autocomplete || 'off' });
+    return { eingabe: eingabe, box: element('div', { 'class': 'feld' }, [beschriftung(id, text, optional), eingabe]) };
+  }
+
+  function formularZeigen(daten) {
+    karte.textContent = '';
+    position = null;
+    gewaehlt = null;
+    ladezeit = Date.now();
+
+    var arten = daten.arten || [];
+    var standardArt = 'Lampe brennt nicht';
+    var strasse = textFeld('la-strasse', 'Straße', false, 200, 'street-address');
+    var strassenFehler = element('p', { 'class': 'fehler', id: 'la-strasse-fehler', hidden: 'hidden', text: 'Bitte wähle die Straße aus den Vorschlägen aus.' });
+    var vorschlaege = element('div', { 'class': 'vorschlaege', role: 'group', 'aria-label': 'Adressvorschläge' });
+    var suchHinweis = element('p', { 'class': 'hinweis klein', role: 'status', 'aria-live': 'polite' });
+    strasse.box.appendChild(vorschlaege);
+    strasse.box.appendChild(suchHinweis);
+    strasse.box.appendChild(strassenFehler);
+    strasse.eingabe.setAttribute('placeholder', 'Straße suchen');
+    var erlaubt = [ortName(daten.name)].concat((daten.stadtteile || []).map(function (s) { return s.name; })).map(vergleich);
+    var suchNummer = 0, suchUhr = null;
+    var haus = textFeld('la-haus', 'Hausnummer', true, 20);
+    var lampe = textFeld('la-lampe', 'Leuchtennummer', true, 50);
+    var paar = element('div', { 'class': 'paar' }, [haus.box, lampe.box]);
+
+    var art = element('select', { id: 'la-art' }, arten.map(function (a) { return element('option', { value: a, text: a }); }));
+    if (arten.indexOf(standardArt) >= 0) art.value = standardArt;
+    var artBox = element('div', { 'class': 'feld' }, [beschriftung('la-art', 'Art der Störung'), art]);
+
+    var bemerkung = element('textarea', { id: 'la-bemerkung', maxlength: '2000' });
+    var bemerkungBox = element('div', { 'class': 'feld' }, [beschriftung('la-bemerkung', 'Bemerkungen', true), bemerkung]);
+
+    var ganz = element('input', { type: 'checkbox', id: 'la-ganz' });
+    var ganzBox = element('label', { 'class': 'haken', 'for': 'la-ganz' }, [ganz, element('span', { text: 'Ist die gesamte Straße dunkel?' })]);
+    ganz.addEventListener('change', function () {
+      paar.hidden = ganz.checked;
+      paar.style.display = ganz.checked ? 'none' : '';
+      artBox.hidden = ganz.checked;
+      artBox.style.display = ganz.checked ? 'none' : '';
+      if (ganz.checked) { haus.eingabe.value = ''; lampe.eingabe.value = ''; }
+    });
+
+    var falle = element('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', 'aria-hidden': 'true' });
+    var falleBox = element('div', { 'class': 'falle', 'aria-hidden': 'true' }, [falle]);
+
+    var standortKnopf = element('button', { type: 'button', 'class': 'neben', text: 'Aktuellen Standort verwenden' });
+    var standortHinweis = element('p', { 'class': 'hinweis', text: 'Dein Standort wird nur für diese Meldung verwendet.' });
+    // Standort: Browser erlauben ihn nur auf HTTPS-Seiten und in Iframes nur mit allow="geolocation".
+    // Ohne Standort bleibt die Straßensuche als gleichwertiger Weg, das Formular funktioniert weiter.
+    function standortAlternative(text) {
+      standortKnopf.disabled = false;
+      standortHinweis.textContent = text + ' Gib stattdessen die Straße ein und wähle sie aus den Vorschlägen.';
+      try { strasse.eingabe.focus(); } catch (e) { /* ohne Fokus weiter */ }
+    }
+    // Baukästen wie Wix legen eingefügten Code in einen iFrame ohne Standortfreigabe.
+    // Dann führt ein normaler Link zur zentralen Formularseite, die als eigene Seite läuft
+    // und den Standort in jedem Browser abfragen darf. Ein Link funktioniert ohne Pop-up-Erlaubnis.
+    var zentraleSeite = KONFIG.zentraleSeite && KONFIG.formularSchluessel
+      ? KONFIG.zentraleSeite + '?k=' + encodeURIComponent(KONFIG.formularSchluessel) : null;
+    var fensterKnopf = element('a', {
+      'class': 'neben link', hidden: 'hidden', target: '_blank', rel: 'noopener',
+      href: zentraleSeite || '#', text: 'Formular mit Standort in neuem Fenster öffnen'
+    });
+    function eingebettetGesperrt(text) {
+      if (zentraleSeite) {
+        standortKnopf.disabled = false;
+        standortHinweis.textContent = text + ' Öffne das Formular in einem neuen Fenster, dort funktioniert der Standort. Oder gib die Straße ein.';
+        fensterKnopf.hidden = false;
+      } else {
+        standortAlternative(text);
+      }
+    }
+    function imIframe() {
+      try { return window.self !== window.top; } catch (e) { return true; }
+    }
+    function standortGesperrtDurchSeite() {
+      var regel = document.permissionsPolicy || document.featurePolicy;
+      try { return !!(regel && regel.allowsFeature && !regel.allowsFeature('geolocation')); } catch (e) { return false; }
+    }
+    function standortVerwenden(ergebnis) {
+      position = { lat: ergebnis.coords.latitude, lon: ergebnis.coords.longitude };
+      standortKnopf.disabled = false;
+      standortHinweis.textContent = 'Standort gefunden, Adresse wird ermittelt …';
+      fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=de&lat=' + position.lat + '&lon=' + position.lon)
+        .then(function (a) { if (!a.ok) { throw new Error('Status ' + a.status); } return a.json(); })
+        .then(function (d) {
+          var adresse = d.address || {};
+          var weg = adresse.road || adresse.pedestrian || adresse.residential || adresse.path;
+          var teile = ['village', 'suburb', 'hamlet', 'city_district'].map(function (k) { return adresse[k]; }).filter(Boolean);
+          var orte = ['city', 'town', 'municipality'].map(function (k) { return adresse[k]; }).filter(Boolean);
+          var imGebiet = (orte.length ? orte : teile).some(function (o) { return erlaubt.indexOf(vergleich(o)) >= 0; }) &&
+            teile.every(function (o) { return erlaubt.indexOf(vergleich(o)) >= 0; });
+          if (!imGebiet) {
+            standortAlternative('Dein Standort liegt nicht in ' + ortName(daten.name) + '.');
+          } else if (weg) {
+            auswaehlen({ strasse: weg, haus: adresse.house_number, ort: '', lat: position.lat, lon: position.lon });
+            standortHinweis.textContent = 'Standort übernommen. Bitte prüfe die Adresse.';
+          } else {
+            standortAlternative('Zu deinem Standort wurde keine Straße gefunden.');
+          }
+        })
+        .catch(function () { standortAlternative('Die Adresse zu deinem Standort konnte nicht ermittelt werden.'); });
+    }
+    function standortFehler(fehler, zweiterVersuch) {
+      if (fehler && fehler.code === 1) {
+        if (imIframe()) {
+          eingebettetGesperrt('Die Webseite gibt den Standort für das eingebettete Formular nicht frei.');
+        } else if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+          standortAlternative('Der Standortzugriff wurde abgelehnt. Auf dem iPhone lässt er sich unter Einstellungen › Datenschutz › Ortungsdienste erlauben.');
+        } else {
+          standortAlternative('Der Standortzugriff wurde abgelehnt. Du kannst ihn in den Einstellungen deines Browsers für diese Seite erlauben.');
+        }
+      } else if (fehler && fehler.code === 3 && !zweiterVersuch) {
+        // Zeitüberschreitung: noch einmal mit ungefährer Ortung (WLAN, Mobilfunk) versuchen.
+        standortHinweis.textContent = 'Standort wird weiter ermittelt …';
+        navigator.geolocation.getCurrentPosition(standortVerwenden, function (f) { standortFehler(f, true); },
+          { enableHighAccuracy: false, timeout: 20000, maximumAge: 120000 });
+      } else if (fehler && fehler.code === 3) {
+        standortAlternative('Der Standort konnte nicht rechtzeitig ermittelt werden.');
+      } else {
+        standortAlternative('Dein Gerät konnte den Standort gerade nicht bestimmen.');
+      }
+    }
+    standortKnopf.addEventListener('click', function () {
+      if (!navigator.geolocation) { standortAlternative('Dein Browser kann den Standort nicht ermitteln.'); return; }
+      if (window.isSecureContext === false) {
+        standortAlternative('Der Standort ist nur auf verschlüsselten Seiten (https) verfügbar.');
+        return;
+      }
+      if (standortGesperrtDurchSeite()) {
+        if (imIframe()) { eingebettetGesperrt('Diese Webseite gibt den Standort für das eingebettete Formular nicht frei.'); return; }
+        standortAlternative('Diese Webseite erlaubt den Standortzugriff für das Formular nicht.');
+        return;
+      }
+      standortKnopf.disabled = true;
+      standortHinweis.textContent = 'Standort wird ermittelt …';
+      navigator.geolocation.getCurrentPosition(standortVerwenden, function (f) { standortFehler(f, false); },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+    });
+
+    var senden = element('button', { type: 'submit', 'class': 'haupt', text: 'Störung melden' });
+    var status = element('p', { 'class': 'status', role: 'status', 'aria-live': 'polite' });
+
+    var inhalt = [
+      element('h2', { text: 'Straßenbeleuchtung melden' }),
+      element('p', { 'class': 'unter', text: 'Die Meldung geht direkt an ' + daten.name + '.' })
+    ];
+    if (KONFIG.vorschau) inhalt.push(element('p', { 'class': 'vorschau', text: 'Vorschau: Es wird nichts gesendet.' }));
+    inhalt = inhalt.concat([standortKnopf, standortHinweis, fensterKnopf, strasse.box, paar, artBox]);
+    inhalt = inhalt.concat([bemerkungBox, ganzBox, falleBox, senden, status]);
+
+    var formular = element('form', { novalidate: 'novalidate' }, inhalt);
+    karte.appendChild(formular);
+
+    function auswaehlen(treffer) {
+      gewaehlt = treffer;
+      strasse.eingabe.value = treffer.strasse;
+      if (treffer.haus && !ganz.checked) haus.eingabe.value = treffer.haus;
+      vorschlaege.textContent = '';
+      suchHinweis.textContent = 'Adresse übernommen.';
+      strasse.eingabe.removeAttribute('aria-invalid');
+      strassenFehler.hidden = true;
+    }
+
+    function suchen(text, nummer) {
+      var adresse = 'https://photon.komoot.io/api/?lang=de&limit=30&q=' + encodeURIComponent(text + ' ' + ortName(daten.name));
+      if (daten.zentrum) adresse += '&lat=' + daten.zentrum.lat + '&lon=' + daten.zentrum.lon;
+      fetch(adresse).then(function (a) { return a.json(); }).then(function (d) {
+        if (nummer !== suchNummer) return;
+        var treffer = adressTreffer(d, erlaubt);
+        vorschlaege.textContent = '';
+        suchHinweis.textContent = treffer.length ? '' : 'Keine passende Straße gefunden. Bitte prüfe die Schreibweise.';
+        treffer.forEach(function (t) {
+          var knopf = element('button', { type: 'button', 'class': 'vorschlag' }, [
+            element('strong', { text: t.strasse + (t.haus ? ' ' + t.haus : '') }),
+            element('span', { text: t.ort })
+          ]);
+          knopf.addEventListener('click', function () { auswaehlen(t); });
+          vorschlaege.appendChild(knopf);
+        });
+      }).catch(function () {
+        if (nummer === suchNummer) suchHinweis.textContent = 'Die Adresssuche ist gerade nicht erreichbar. Bitte versuche es gleich noch einmal.';
+      });
+    }
+
+    strasse.eingabe.addEventListener('input', function () {
+      strasse.eingabe.removeAttribute('aria-invalid');
+      strassenFehler.hidden = true;
+      gewaehlt = null;
+      position = null;
+      vorschlaege.textContent = '';
+      var text = strasse.eingabe.value.trim();
+      var nummer = ++suchNummer;
+      clearTimeout(suchUhr);
+      suchHinweis.textContent = '';
+      if (text.length >= 2) suchUhr = setTimeout(function () { suchen(text, nummer); }, 250);
+    });
+
+    formular.addEventListener('submit', function (ereignis) {
+      ereignis.preventDefault();
+      status.textContent = '';
+      status.className = 'status';
+      if (!gewaehlt) {
+        strasse.eingabe.setAttribute('aria-invalid', 'true');
+        strasse.eingabe.setAttribute('aria-describedby', 'la-strasse-fehler');
+        strassenFehler.hidden = false;
+        strasse.eingabe.focus();
+        return;
+      }
+
+      if (KONFIG.vorschau) { fertigZeigen(daten); return; }
+
+      senden.disabled = true;
+      senden.textContent = 'Wird gesendet …';
+      genauerPunkt(gewaehlt, ganz.checked ? '' : haus.eingabe.value.trim(), daten.name).then(function (ziel) {
+      return aufrufen('submit_embed_report', {
+        p_key: KONFIG.formularSchluessel,
+        p_street: ziel.strasse,
+        p_issue_type: ganz.checked ? null : art.value,
+        p_house_number: ganz.checked ? null : (haus.eingabe.value.trim() || null),
+        p_lamp_number: ganz.checked ? null : (lampe.eingabe.value.trim() || null),
+        p_description: bemerkung.value.trim() || null,
+        p_latitude: ziel.lat,
+        p_longitude: ziel.lon,
+        p_whole_street_dark: ganz.checked,
+        p_website: falle.value || null,
+        p_elapsed_ms: Date.now() - ladezeit
+      });
+      }).then(function (ergebnis) {
+        fertigZeigen(daten, ergebnis && ergebnis.duplicate);
+      }).catch(function (fehler) {
+        senden.disabled = false;
+        senden.textContent = 'Störung melden';
+        status.className = 'status schlecht';
+        status.textContent = fehler.message || 'Die Meldung konnte nicht gesendet werden. Bitte versuche es erneut.';
+      });
+    });
+  }
+
+  function fertigZeigen(daten, bekannt) {
+    karte.textContent = '';
+    var titel = element('h2', { text: 'Vielen Dank!', tabindex: '-1' });
+    var nochmal = element('button', { type: 'button', 'class': 'neben', text: 'Weitere Störung melden' });
+    nochmal.addEventListener('click', function () { formularZeigen(daten); });
+    karte.appendChild(element('div', { 'class': 'fertig', role: 'status' }, [
+      titel,
+      element('p', { 'class': 'unter', text: bekannt ? 'Diese Störung ist uns bereits bekannt. Deine Meldung wurde ergänzt.' : 'Deine Meldung ist bei ' + daten.name + ' eingegangen.' }),
+      nochmal
+    ]));
+    titel.focus();
+  }
+
+  function nichtVerfuegbar() {
+    karte.textContent = '';
+    karte.appendChild(element('p', { role: 'status', text: 'Das Meldeformular ist derzeit nicht verfügbar. Bitte versuche es später erneut.' }));
+  }
+
+  if (KONFIG.vorschau) {
+    formularZeigen(KONFIG.vorschau);
+  } else {
+    karte.appendChild(element('p', { role: 'status', text: 'Formular wird geladen …' }));
+    aufrufen('get_public_embed_config', { p_key: KONFIG.formularSchluessel }).then(formularZeigen).catch(nichtVerfuegbar);
+  }
+}
+
+  })(KONFIG);
+})();
+</script>
+</main>
+<footer>Deine Meldung geht direkt an die zuständige Kommune. Der Standort wird nur für diese Meldung verwendet.</footer>
+</body>
+</html>
