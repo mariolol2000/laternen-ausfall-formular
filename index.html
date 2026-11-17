@@ -97,6 +97,69 @@ if (ziel && !ziel.shadowRoot) {
 
   function ortName(name) { return String(name).trim().replace(/^(stadt|markt|gemeinde)\s+/i, ''); }
 
+  // ---- Straßenverzeichnis: schnelle Suche direkt im Browser, nur echte Straßen ----
+  // Gleiche Regeln wie in der App (lib/funktionen/strassen_verzeichnis.dart).
+  function suchSchluessel(text) {
+    var t = String(text).toLowerCase().replace(/ß/g, 'ss').replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u');
+    t = t.replace(/ae/g, 'a').replace(/oe/g, 'o').replace(/ue/g, 'u').replace(/[-.,\/'’()]/g, ' ');
+    t = t.replace(/str(?=\s|$)/g, 'strasse');
+    return t.replace(/\s+/g, ' ').trim();
+  }
+  function tippAbstand(a, b, grenze) {
+    if (Math.abs(a.length - b.length) > grenze) return grenze + 1;
+    var vorher = [], i, j;
+    for (j = 0; j <= b.length; j++) vorher.push(j);
+    for (i = 1; i <= a.length; i++) {
+      var jetzt = [i], min = i;
+      for (j = 1; j <= b.length; j++) {
+        jetzt[j] = Math.min(jetzt[j - 1] + 1, vorher[j] + 1, vorher[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (jetzt[j] < min) min = jetzt[j];
+      }
+      if (min > grenze) return grenze + 1;
+      vorher = jetzt;
+    }
+    return vorher[b.length];
+  }
+  function verzeichnisName(name) {
+    return ortName(name).toLowerCase().replace(/ß/g, 'ss').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+  function strassenSuchen(alle, eingabe, hauptort) {
+    var q = suchSchluessel(eingabe);
+    if (q.length < 2) return [];
+    var teile = q.split(' '), toleranz = q.length >= 8 ? 2 : (q.length >= 4 ? 1 : 0), liste = [];
+    alle.forEach(function (e) {
+      var k = e.k || (e.k = suchSchluessel(e.n)), woerter = k.split(' '), rang = -1;
+      if (k.indexOf(q) === 0) rang = 0;
+      else if (teile.every(function (t) { return woerter.some(function (w) { return w.indexOf(t) === 0; }); })) rang = 1;
+      else if (k.indexOf(q) >= 0) rang = 2;
+      else if (toleranz > 0 && (tippAbstand(q, k.slice(0, q.length), toleranz) <= toleranz ||
+        woerter.some(function (w) { return tippAbstand(q, w.slice(0, q.length), toleranz) <= toleranz; }))) rang = 3;
+      if (rang >= 0) liste.push([rang, e]);
+    });
+    liste.sort(function (a, b) {
+      return a[0] - b[0] || a[1].n.localeCompare(b[1].n, 'de') || String(a[1].o).localeCompare(String(b[1].o), 'de');
+    });
+    return liste.slice(0, 12).map(function (x) {
+      var e = x[1];
+      return { strasse: e.n, lat: e.lat, lon: e.lon, ort: !e.o || e.o === hauptort ? hauptort : e.o + ', ' + hauptort };
+    });
+  }
+  // Die Verzeichnisse liegen zentral bei der Formularseite (GitHub Pages, für jede Seite abrufbar)
+  // und werden dort automatisch für jede aktive Kommune erzeugt (werkzeug/strassen_erzeugen.py).
+  var STRASSEN_BASIS = KONFIG.strassenBasis || 'https://mariolol2000.github.io/laternen-ausfall-formular/strassen/';
+  var verzeichnisse = {};
+  function verzeichnisLaden(name) {
+    var datei = verzeichnisName(name);
+    if (!verzeichnisse[datei]) {
+      verzeichnisse[datei] = fetch(STRASSEN_BASIS + datei + '.json', { cache: 'no-cache' })
+        .then(function (a) { if (!a.ok) throw new Error(); return a.json(); })
+        .then(function (d) { if (!d || !d.strassen || !d.strassen.length) throw new Error(); return d.strassen; })
+        .catch(function () { delete verzeichnisse[datei]; return null; });
+    }
+    return verzeichnisse[datei];
+  }
+
   function adressTreffer(antwort, erlaubt) {
     var gesehen = {}, nurHauspunkt = {}, ergebnis = [];
     (antwort.features || []).forEach(function (f) {
@@ -142,8 +205,8 @@ if (ziel && !ziel.shadowRoot) {
       .then(function (liste) {
         var genau = (liste || []).filter(function (e) {
           var a = e.address || {};
-          return vergleich(a.road || '') === vergleich(treffer.strasse) &&
-            vergleich(a.house_number || '') === vergleich(hausnummer) &&
+          return suchSchluessel(a.road || '') === suchSchluessel(treffer.strasse) &&
+            vergleich(a.house_number || '').replace(/\s+/g, '') === vergleich(hausnummer).replace(/\s+/g, '') &&
             abstandMeter(treffer, { lat: parseFloat(e.lat), lon: parseFloat(e.lon) }) <= 2000;
         })[0];
         return genau ? { strasse: treffer.strasse, lat: parseFloat(genau.lat), lon: parseFloat(genau.lon) } : treffer;
@@ -170,8 +233,13 @@ if (ziel && !ziel.shadowRoot) {
     return l;
   }
 
-  function textFeld(id, text, optional, maxLaenge, autocomplete) {
-    var eingabe = element('input', { type: 'text', id: id, maxlength: String(maxLaenge), autocomplete: autocomplete || 'off' });
+  function textFeld(id, text, optional, maxLaenge) {
+    // Keine Browser-Vorschläge (gespeicherte Adressen, frühere Eingaben) und keine Autokorrektur:
+    // eigener, zufälliger Name, damit der Browser das Feld nicht als Anschrift erkennt.
+    var eingabe = element('input', {
+      type: 'text', id: id, name: id + '-' + Math.random().toString(36).slice(2, 8), maxlength: String(maxLaenge),
+      autocomplete: 'off', autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false', 'data-lpignore': 'true', 'data-1p-ignore': 'true'
+    });
     return { eingabe: eingabe, box: element('div', { 'class': 'feld' }, [beschriftung(id, text, optional), eingabe]) };
   }
 
@@ -183,7 +251,10 @@ if (ziel && !ziel.shadowRoot) {
 
     var arten = daten.arten || [];
     var standardArt = 'Lampe brennt nicht';
-    var strasse = textFeld('la-strasse', 'Straße', false, 200, 'street-address');
+    var strasse = textFeld('la-strasse', 'Straße', false, 200);
+    strasse.eingabe.setAttribute('role', 'combobox');
+    strasse.eingabe.setAttribute('aria-autocomplete', 'list');
+    strasse.eingabe.setAttribute('aria-expanded', 'false');
     var strassenFehler = element('p', { 'class': 'fehler', id: 'la-strasse-fehler', hidden: 'hidden', text: 'Bitte wähle die Straße aus den Vorschlägen aus.' });
     var vorschlaege = element('div', { 'class': 'vorschlaege', role: 'group', 'aria-label': 'Adressvorschläge' });
     var suchHinweis = element('p', { 'class': 'hinweis klein', role: 'status', 'aria-live': 'polite' });
@@ -331,27 +402,52 @@ if (ziel && !ziel.shadowRoot) {
       strasse.eingabe.value = treffer.strasse;
       if (treffer.haus && !ganz.checked) haus.eingabe.value = treffer.haus;
       vorschlaege.textContent = '';
+      strasse.eingabe.setAttribute('aria-expanded', 'false');
       suchHinweis.textContent = 'Adresse übernommen.';
       strasse.eingabe.removeAttribute('aria-invalid');
       strassenFehler.hidden = true;
     }
 
+    var verzeichnis = null, verzeichnisFertig = false;
+    verzeichnisLaden(daten.name).then(function (liste) {
+      verzeichnis = liste;
+      verzeichnisFertig = true;
+      var text = strasse.eingabe.value.trim();
+      if (!gewaehlt && text.length >= 2) suchen(text, ++suchNummer);
+    });
+
+    function vorschlaegeZeigen(treffer) {
+      vorschlaege.textContent = '';
+      strasse.eingabe.setAttribute('aria-expanded', treffer.length ? 'true' : 'false');
+      suchHinweis.textContent = treffer.length ? '' : 'Diese Straße gibt es in ' + ortName(daten.name) + ' nicht. Bitte prüfe die Schreibweise.';
+      treffer.forEach(function (t) {
+        var knopf = element('button', { type: 'button', 'class': 'vorschlag' }, [
+          element('strong', { text: t.strasse + (t.haus ? ' ' + t.haus : '') }),
+          element('span', { text: t.ort })
+        ]);
+        knopf.addEventListener('click', function () { auswaehlen(t); });
+        vorschlaege.appendChild(knopf);
+      });
+    }
+
     function suchen(text, nummer) {
+      if (verzeichnis) { vorschlaegeZeigen(strassenSuchen(verzeichnis, text, ortName(daten.name))); return; }
+      if (!verzeichnisFertig) { suchHinweis.textContent = 'Straßen werden geladen …'; return; }
       var adresse = 'https://photon.komoot.io/api/?lang=de&limit=30&q=' + encodeURIComponent(text + ' ' + ortName(daten.name));
       if (daten.zentrum) adresse += '&lat=' + daten.zentrum.lat + '&lon=' + daten.zentrum.lon;
-      fetch(adresse).then(function (a) { return a.json(); }).then(function (d) {
-        if (nummer !== suchNummer) return;
-        var treffer = adressTreffer(d, erlaubt);
-        vorschlaege.textContent = '';
-        suchHinweis.textContent = treffer.length ? '' : 'Keine passende Straße gefunden. Bitte prüfe die Schreibweise.';
-        treffer.forEach(function (t) {
-          var knopf = element('button', { type: 'button', 'class': 'vorschlag' }, [
-            element('strong', { text: t.strasse + (t.haus ? ' ' + t.haus : '') }),
-            element('span', { text: t.ort })
-          ]);
-          knopf.addEventListener('click', function () { auswaehlen(t); });
-          vorschlaege.appendChild(knopf);
+      // Photon lehnt bei Andrang oft kurz mit 503 ab – dann bis zu zweimal kurz neu versuchen.
+      function holen(versuch) {
+        return fetch(adresse).then(function (a) {
+          if ((a.status === 503 || a.status === 429) && versuch < 2) {
+            return new Promise(function (fertig) { setTimeout(fertig, 350 * (versuch + 1)); }).then(function () { return holen(versuch + 1); });
+          }
+          if (!a.ok) throw new Error('Status ' + a.status);
+          return a.json();
         });
+      }
+      holen(0).then(function (d) {
+        if (nummer !== suchNummer) return;
+        vorschlaegeZeigen(adressTreffer(d, erlaubt));
       }).catch(function () {
         if (nummer === suchNummer) suchHinweis.textContent = 'Die Adresssuche ist gerade nicht erreichbar. Bitte versuche es gleich noch einmal.';
       });
@@ -367,7 +463,11 @@ if (ziel && !ziel.shadowRoot) {
       var nummer = ++suchNummer;
       clearTimeout(suchUhr);
       suchHinweis.textContent = '';
-      if (text.length >= 2) suchUhr = setTimeout(function () { suchen(text, nummer); }, 250);
+      // Im Verzeichnis sofort, online erst nach kurzer Tipp-Pause.
+      if (text.length >= 2) {
+        if (verzeichnis || !verzeichnisFertig) suchen(text, nummer);
+        else suchUhr = setTimeout(function () { suchen(text, nummer); }, 250);
+      }
     });
 
     formular.addEventListener('submit', function (ereignis) {
@@ -436,6 +536,7 @@ if (ziel && !ziel.shadowRoot) {
     aufrufen('get_public_embed_config', { p_key: KONFIG.formularSchluessel }).then(formularZeigen).catch(nichtVerfuegbar);
   }
 }
+
 
   })(KONFIG);
 })();
