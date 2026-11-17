@@ -21,6 +21,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 SUPABASE = "https://jljduusvfmibzpirntbi.supabase.co"
+OEFFENTLICHER_SCHLUESSEL = "sb_publishable__sFY04WWa-gVpLFyKD5ceg_NiRjIn0h"
 WURZEL = Path(__file__).resolve().parents[1]
 ZIEL = WURZEL / "strassen"
 GUELTIG_TAGE = 30
@@ -34,11 +35,8 @@ AUSGESCHLOSSEN = ("footway|cycleway|path|steps|track|bridleway|construction|prop
 
 
 def oeffentlicher_schluessel() -> str:
-    """Der öffentliche Schlüssel steht ohnehin in der Formularseite (kein Geheimnis)."""
-    treffer = re.search(r"sb_publishable_[A-Za-z0-9_-]+", (WURZEL / "index.html").read_text(encoding="utf-8"))
-    if not treffer:
-        raise SystemExit("Öffentlicher Schlüssel nicht in index.html gefunden")
-    return treffer.group(0)
+    """Öffentlicher Schlüssel (steht ohnehin in jedem Meldeformular, kein Geheimnis)."""
+    return OEFFENTLICHER_SCHLUESSEL
 
 
 def curl(argumente, zeitlimit=300) -> str:
