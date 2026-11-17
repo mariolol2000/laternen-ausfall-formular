@@ -115,8 +115,14 @@ out;"""
 def erzeugen(kommune: str, gebiet: dict):
     ort = ort_name(kommune)
     mitte = ((gebiet["min_lat"] + gebiet["max_lat"]) / 2, (gebiet["min_lon"] + gebiet["max_lon"]) / 2)
-    daten = overpass(abfrage(ort, mitte))
-    if not any(e["type"] == "way" for e in daten["elements"]):
+    # Ein überlasteter Server liefert manchmal eine leere Antwort ohne Fehlermeldung – dann neu fragen.
+    for versuch in range(3):
+        daten = overpass(abfrage(ort, mitte))
+        if any(e["type"] == "way" for e in daten["elements"]):
+            break
+        print(f"  {ort}: leere Antwort, neuer Versuch", file=sys.stderr)
+        time.sleep(30)
+    else:
         raise RuntimeError(f"Keine Verwaltungsgrenze „{ort}“ am Gemeindemittelpunkt gefunden")
     orte = [(e["tags"]["name"], (e["lat"], e["lon"]), e["tags"]["place"]) for e in daten["elements"]
             if e["type"] == "node" and "name" in e["tags"] and "lat" in e]
