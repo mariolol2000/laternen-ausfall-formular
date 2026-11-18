@@ -107,7 +107,9 @@ area.alle["boundary"="administrative"]["admin_level"~"^(6|7|8)$"]["name"~"^{name
 (way["highway"]["name"]["highway"!~"^({AUSGESCHLOSSEN})$"](area.a););
 out tags geom;
 node["place"~"^(town|city|village|hamlet|suburb|quarter|isolated_dwelling)$"](area.a);
-out;"""
+out;
+nwr["addr:housenumber"]["addr:street"](area.a);
+out tags center;"""
 
 
 def erzeugen(kommune: str, gebiet: dict):
@@ -123,7 +125,7 @@ def erzeugen(kommune: str, gebiet: dict):
     else:
         raise RuntimeError(f"Keine Verwaltungsgrenze „{ort}“ am Gemeindemittelpunkt gefunden")
     orte = [(e["tags"]["name"], (e["lat"], e["lon"]), e["tags"]["place"]) for e in daten["elements"]
-            if e["type"] == "node" and "name" in e["tags"] and "lat" in e]
+            if e["type"] == "node" and "place" in e.get("tags", {}) and "name" in e["tags"] and "lat" in e]
     wege = {}
     for e in daten["elements"]:
         if e["type"] != "way" or len(e.get("geometry", [])) < 2:
@@ -157,6 +159,7 @@ def erzeugen(kommune: str, gebiet: dict):
             eintraege.append({"n": name, "o": ortsteil(auf), "lat": round(auf[0], 6), "lon": round(auf[1], 6)})
 
     eintraege = doppelte_entfernen(eintraege)
+    hausnummern_zuordnen(eintraege, daten["elements"])
     eintraege.sort(key=lambda e: (e["n"].lower(), e["o"]))
     inhalt = {"kommune": kommune, "ort": ort, "stand": date.today().isoformat(),
               "quelle": "© OpenStreetMap-Mitwirkende (ODbL)", "strassen": eintraege}
@@ -164,6 +167,58 @@ def erzeugen(kommune: str, gebiet: dict):
     (ZIEL / f"{dateiname(kommune)}.json").write_text(json.dumps(inhalt, ensure_ascii=False, separators=(",", ":")),
                                                      encoding="utf-8")
     print(f"{kommune}: {len(eintraege)} Straßen")
+
+
+def hausnummer_text(nummer: str) -> str:
+    """„38 a“ → „38a“, Leerzeichen am Rand weg."""
+    return re.sub(r"(\d)\s+([a-zA-Z])$", r"\1\2", nummer.strip())
+
+
+def namens_schluessel(name: str) -> str:
+    """„Bahnhofstr.“, „Bahnhofstrasse“ und „Bahnhof-Straße“ gelten als dieselbe Straße."""
+    t = name.strip().lower().replace("ß", "ss")
+    t = re.sub(r"str\.?(?=\s|$)", "strasse", t)
+    return re.sub(r"[\s\-]+", " ", t).replace("strasse", " strasse").replace("  ", " ").strip()
+
+
+def hausnummern_zuordnen(eintraege, elemente):
+    """Hängt jedem Straßeneintrag seine Hausnummern mit Position an: "h": [["12", lat, lon], …].
+    Gibt es den Straßennamen mehrfach (verschiedene Ortsteile), gilt der nächstgelegene Eintrag."""
+    nach_name = {}
+    for e in eintraege:
+        nach_name.setdefault(namens_schluessel(e["n"]), []).append(e)
+    gesehen = set()
+    anzahl = 0
+    for el in elemente:
+        tags = el.get("tags", {})
+        if "addr:housenumber" not in tags or "addr:street" not in tags:
+            continue
+        lat, lon = (el["lat"], el["lon"]) if "lat" in el else (el.get("center", {}).get("lat"), el.get("center", {}).get("lon"))
+        if lat is None:
+            continue
+        kandidaten = nach_name.get(namens_schluessel(tags["addr:street"]))
+        if not kandidaten:
+            continue
+        ziel = min(kandidaten, key=lambda e: meter((lat, lon), (e["lat"], e["lon"])))
+        for teil in re.split(r"[;,]", tags["addr:housenumber"]):
+            nummer = hausnummer_text(teil)
+            if not nummer or len(nummer) > 12:
+                continue
+            schluessel = (id(ziel), nummer.lower().replace(" ", ""))
+            if schluessel in gesehen:
+                continue
+            gesehen.add(schluessel)
+            ziel.setdefault("h", []).append([nummer, round(lat, 5), round(lon, 5)])
+            anzahl += 1
+
+    def natuerlich(h):
+        m = re.match(r"\d+", h[0])
+        return (int(m.group()) if m else 10**6, h[0].lower())
+
+    for e in eintraege:
+        if "h" in e:
+            e["h"].sort(key=natuerlich)
+    print(f"  {anzahl} Hausnummern zugeordnet")
 
 
 def gebiet_von(kommune: dict) -> dict:
@@ -186,7 +241,11 @@ def veraltet(kommune: str) -> bool:
     if not datei.exists():
         return True
     try:
-        stand = datetime.fromisoformat(json.loads(datei.read_text(encoding="utf-8"))["stand"]).date()
+        inhalt = json.loads(datei.read_text(encoding="utf-8"))
+        # Ältere Fassung ohne Hausnummern sofort erneuern.
+        if not any("h" in e for e in inhalt.get("strassen", [])):
+            return True
+        stand = datetime.fromisoformat(inhalt["stand"]).date()
         return (date.today() - stand).days >= GUELTIG_TAGE
     except Exception:  # noqa: BLE001
         return True
